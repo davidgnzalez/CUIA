@@ -130,6 +130,7 @@ class PyrenderModelViewer:
         self.renderer = None
         self.camera_node = None
         self.mesh_node = None
+        self.mesh_nodes = []
         self.current_model = None
         self.initialized = False
         
@@ -180,17 +181,41 @@ class PyrenderModelViewer:
             return False
 
         if isinstance(model, trimesh.Scene):
-            model = model.dump(concatenate=True)
+            print("DEBUG_MODEL: Escena detectada, creando meshes individuales")
+            combined = model.dump(concatenate=True)
 
-        model.apply_translation(-model.centroid)
-        model.apply_scale(scale)
-        rot_x = rotation_matrix(np.radians(90), [1, 0, 0])
-        model.apply_transform(rot_x)
-        lift = translation_matrix([0, 0, elevation])
-        model.apply_transform(lift)
+            from trimesh.transformations import scale_matrix
+            cent_trans = translation_matrix(-combined.centroid)
+            scale_mat = scale_matrix(scale)
+            rot_x = rotation_matrix(np.radians(90), [1, 0, 0])
+            lift = translation_matrix([0, 0, elevation])
+            transform = lift @ rot_x @ scale_mat @ cent_trans
 
-        # Crear mesh manteniendo suavizado para GLB/GLTF
-        self.current_model = pyrender.Mesh.from_trimesh(model, smooth=ext in ['.glb', '.gltf'])
+            meshes = []
+            for node_name in model.graph.nodes_geometry:
+                pose, geom_name = model.graph[node_name]
+                geom = model.geometry[geom_name].copy()
+                geom.apply_transform(pose)
+                mat = getattr(geom.visual, 'material', None)
+                if mat is not None:
+                    for attr in ['baseColorTexture', 'metallicRoughnessTexture', 'normalTexture', 'occlusionTexture']:
+                        tex = getattr(mat, attr, None)
+                        if hasattr(tex, 'mode') and tex.mode in ('LA', 'L'):
+                            converted = tex.convert('RGBA' if tex.mode == 'LA' else 'RGB')
+                            setattr(mat, attr, converted)
+                geom.apply_transform(transform)
+                meshes.append(pyrender.Mesh.from_trimesh(geom, smooth=ext in ['.glb', '.gltf']))
+
+            self.current_model = meshes
+        else:
+            model.apply_translation(-model.centroid)
+            model.apply_scale(scale)
+            rot_x = rotation_matrix(np.radians(90), [1, 0, 0])
+            model.apply_transform(rot_x)
+            lift = translation_matrix([0, 0, elevation])
+            model.apply_transform(lift)
+
+            self.current_model = [pyrender.Mesh.from_trimesh(model, smooth=ext in ['.glb', '.gltf'])]
         print(f"DEBUG_MODEL: ✅ Modelo {self._current_model_name} cargado correctamente")
         print(f"DEBUG_MODEL: Smooth: {ext in ['.glb', '.gltf']}")
         return True
@@ -216,29 +241,31 @@ class PyrenderModelViewer:
         
         # 🔍 DETECTAR SI EL MODELO YA TIENE MATERIALES
         has_materials = False
-        if hasattr(self.current_model, 'primitives'):
-            print(f"DEBUG_MODEL: 🔍 Analizando {len(self.current_model.primitives)} primitivas...")
-            for i, primitive in enumerate(self.current_model.primitives):
-                if primitive.material is not None:
-                    has_materials = True
-                    print(f"DEBUG_MODEL: Primitiva {i} tiene material: {type(primitive.material).__name__}")
-                    
-                    # 🔍 DEBUG DETALLADO DEL MATERIAL GLB
-                    mat = primitive.material
-                    print(f"DEBUG_MODEL: --- Material {i} Detalles ---")
-                    if hasattr(mat, 'baseColorFactor'):
-                        print(f"DEBUG_MODEL: baseColorFactor: {mat.baseColorFactor}")
-                    if hasattr(mat, 'baseColorTexture'):
-                        print(f"DEBUG_MODEL: baseColorTexture: {mat.baseColorTexture}")
-                    if hasattr(mat, 'metallicFactor'):
-                        print(f"DEBUG_MODEL: metallicFactor: {mat.metallicFactor}")
-                    if hasattr(mat, 'roughnessFactor'):
-                        print(f"DEBUG_MODEL: roughnessFactor: {mat.roughnessFactor}")
-                    if hasattr(mat, 'name'):
-                        print(f"DEBUG_MODEL: Material name: {mat.name}")
-                    print(f"DEBUG_MODEL: --- Fin Material {i} ---")
-                else:
-                    print(f"DEBUG_MODEL: Primitiva {i} SIN material")
+        meshes = self.current_model if isinstance(self.current_model, list) else [self.current_model]
+        for mesh in meshes:
+            if hasattr(mesh, 'primitives'):
+                print(f"DEBUG_MODEL: 🔍 Analizando {len(mesh.primitives)} primitivas...")
+                for i, primitive in enumerate(mesh.primitives):
+                    if primitive.material is not None:
+                        has_materials = True
+                        print(f"DEBUG_MODEL: Primitiva {i} tiene material: {type(primitive.material).__name__}")
+
+                        # 🔍 DEBUG DETALLADO DEL MATERIAL GLB
+                        mat = primitive.material
+                        print(f"DEBUG_MODEL: --- Material {i} Detalles ---")
+                        if hasattr(mat, 'baseColorFactor'):
+                            print(f"DEBUG_MODEL: baseColorFactor: {mat.baseColorFactor}")
+                        if hasattr(mat, 'baseColorTexture'):
+                            print(f"DEBUG_MODEL: baseColorTexture: {mat.baseColorTexture}")
+                        if hasattr(mat, 'metallicFactor'):
+                            print(f"DEBUG_MODEL: metallicFactor: {mat.metallicFactor}")
+                        if hasattr(mat, 'roughnessFactor'):
+                            print(f"DEBUG_MODEL: roughnessFactor: {mat.roughnessFactor}")
+                        if hasattr(mat, 'name'):
+                            print(f"DEBUG_MODEL: Material name: {mat.name}")
+                        print(f"DEBUG_MODEL: --- Fin Material {i} ---")
+                    else:
+                        print(f"DEBUG_MODEL: Primitiva {i} SIN material")
 
         print(f"DEBUG_MODEL: ¿Tiene materiales? {has_materials}")
     
@@ -293,15 +320,19 @@ class PyrenderModelViewer:
                 roughnessFactor=0.2,
                 emissiveFactor=[0.2, 0.0, 0.0]
             )
-            
-            if hasattr(self.current_model, 'primitives'):
-                for primitive in self.current_model.primitives:
-                    primitive.material = material_rojo
+
+            for mesh in meshes:
+                if hasattr(mesh, 'primitives'):
+                    for primitive in mesh.primitives:
+                        primitive.material = material_rojo
         else:
             print("DEBUG_MODEL: 🎨 Manteniendo materiales originales del GLB")
     
         # Añadir modelo a la escena
-        self.mesh_node = self.scene.add(self.current_model, pose=np.eye(4))
+        self.mesh_nodes = []
+        for mesh in meshes:
+            node = self.scene.add(mesh, pose=np.eye(4))
+            self.mesh_nodes.append(node)
         
         # Crear renderer
         self.renderer = pyrender.OffscreenRenderer(frame_width, frame_height)
@@ -356,7 +387,8 @@ class PyrenderModelViewer:
             print(f"DEBUG_MODEL: 🔄 Pose OpenGL: \n{pose_gl}")
             
             # Actualizar pose del modelo
-            self.mesh_node.matrix = pose_gl
+            for node in self.mesh_nodes:
+                node.matrix = pose_gl
             
             # Renderizar modelo 3D
             print(f"DEBUG_MODEL: 🎨 Renderizando {model_name}...")
@@ -404,10 +436,18 @@ class PyrenderModelViewer:
                 print("DEBUG_MODEL: Renderer limpiado")
             except:
                 pass
+
+        if self.scene and self.mesh_nodes:
+            for node in self.mesh_nodes:
+                try:
+                    self.scene.remove_node(node)
+                except Exception:
+                    pass
     
         self.renderer = None
         self.scene = None
         self.current_model = None
+        self.mesh_nodes = []
         self.mesh_node = None
         self.camera_node = None
         self.initialized = False
