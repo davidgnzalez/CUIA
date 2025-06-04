@@ -35,7 +35,7 @@ AVAILABLE_CARS = [
     {
         "id": 1,
         "name": "Ferrari F40",
-        "model_path": "ferrari-f40/f40.obj",
+        "model_path": "ferrari-f40/source/f40.obj",  # ← CAMBIO: Añadir /source/
         "description": "Superdeportivo clásico italiano",
         "scale": 0.05,
         "elevation": 0.01
@@ -45,7 +45,7 @@ AVAILABLE_CARS = [
         "name": "Porsche 911",
         "model_path": "porsche-911/911.glb",
         "description": "Deportivo alemán icónico",
-        "scale": 0.03,  # Escala diferente para el Porsche
+        "scale": 0.03,
         "elevation": 0.015
     }
 ]

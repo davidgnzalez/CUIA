@@ -173,9 +173,40 @@ class PyrenderModelViewer:
             print("DEBUG_MODEL: 🎨 Cargando GLB/GLTF con materiales originales")
             model = trimesh.load(model_path, process=True)  # Mantener texturas
         elif ext == '.obj':
-            print("DEBUG_MODEL: 🎨 Cargando OBJ sin materiales")
-            model = trimesh.load(model_path, process=False)
-            model.visual = trimesh.visual.ColorVisuals()  # Limpiar para aplicar rojo
+            print("DEBUG_MODEL: 🎨 Cargando OBJ con materiales MTL")
+            
+            # Verificar si existe el archivo MTL correspondiente
+            mtl_path = model_path.replace('.obj', '.mtl')
+            print(f"DEBUG_MODEL: 🔍 Buscando MTL en: {mtl_path}")
+            
+            if os.path.exists(mtl_path):
+                print("DEBUG_MODEL: ✅ Archivo MTL encontrado")
+                try:
+                    with open(mtl_path, 'r') as f:
+                        mtl_content = f.read()
+                        print(f"DEBUG_MODEL: 📄 Contenido MTL (primeras 500 chars):")
+                        print(mtl_content[:500])
+                        
+                        # Buscar referencias a texturas
+                        texture_refs = []
+                        for line in mtl_content.split('\n'):
+                            if line.strip().startswith(('map_Kd', 'map_Ka', 'map_Ks', 'map_Bump')):
+                                texture_refs.append(line.strip())
+                        
+                        if texture_refs:
+                            print(f"DEBUG_MODEL: 🖼️ Referencias de texturas encontradas:")
+                            for ref in texture_refs:
+                                print(f"DEBUG_MODEL:   {ref}")
+                        else:
+                            print("DEBUG_MODEL: ⚠️ No se encontraron referencias de texturas en MTL")
+                            
+                except Exception as e:
+                    print(f"DEBUG_MODEL: ❌ Error leyendo MTL: {e}")
+            else:
+                print("DEBUG_MODEL: ❌ Archivo MTL no encontrado")
+            
+            # Cargar modelo
+            model = trimesh.load(model_path, process=True)
         else:
             print(f"DEBUG_MODEL: ❌ Formato {ext} no soportado")
             return False
@@ -215,13 +246,28 @@ class PyrenderModelViewer:
             lift = translation_matrix([0, 0, elevation])
             model.apply_transform(lift)
 
-            self.current_model = [pyrender.Mesh.from_trimesh(model, smooth=ext in ['.glb', '.gltf'])]
+            # Crear mesh manteniendo suavizado para ambos formatos
+            self.current_model = [pyrender.Mesh.from_trimesh(model, smooth=True)]  # ← CAMBIO: smooth=True para ambos
         print(f"DEBUG_MODEL: ✅ Modelo {self._current_model_name} cargado correctamente")
-        print(f"DEBUG_MODEL: Smooth: {ext in ['.glb', '.gltf']}")
+        print(f"DEBUG_MODEL: Smooth: True")
+        
+        # Debug de materiales cargados
+        print(f"DEBUG_MODEL: Creados {len(self.current_model)} meshes para {self._current_model_name}")
+        for i, mesh in enumerate(self.current_model):
+            print(f"DEBUG_MODEL: Mesh {i}: {len(mesh.primitives) if hasattr(mesh, 'primitives') else 0} primitivas")
+            
+            # 🔍 DEBUG: Verificar materiales en primitivas
+            if hasattr(mesh, 'primitives'):
+                for j, primitive in enumerate(mesh.primitives):
+                    if primitive.material:
+                        print(f"DEBUG_MODEL: Primitiva {j} tiene material MTL")
+                    else:
+                        print(f"DEBUG_MODEL: Primitiva {j} SIN material")
+    
         return True
     
     def setup_scene(self, camera_matrix, frame_width, frame_height):
-        """Configurar escena con luces EXTREMADAMENTE suaves para GLB"""
+        """Configurar escena detectando materiales en GLB y OBJ"""
         if self.initialized or not self.current_model:
             return
         
@@ -239,7 +285,7 @@ class PyrenderModelViewer:
         )
         self.camera_node = self.scene.add(camera)
         
-        # 🔍 DETECTAR SI EL MODELO YA TIENE MATERIALES
+        # 🔍 DETECTAR SI EL MODELO YA TIENE MATERIALES (GLB O OBJ+MTL)
         has_materials = False
         meshes = self.current_model if isinstance(self.current_model, list) else [self.current_model]
         for mesh in meshes:
@@ -250,7 +296,7 @@ class PyrenderModelViewer:
                         has_materials = True
                         print(f"DEBUG_MODEL: Primitiva {i} tiene material: {type(primitive.material).__name__}")
 
-                        # 🔍 DEBUG DETALLADO DEL MATERIAL GLB
+                        # 🔍 DEBUG DETALLADO DEL MATERIAL
                         mat = primitive.material
                         print(f"DEBUG_MODEL: --- Material {i} Detalles ---")
                         if hasattr(mat, 'baseColorFactor'):
@@ -268,36 +314,41 @@ class PyrenderModelViewer:
                         print(f"DEBUG_MODEL: Primitiva {i} SIN material")
 
         print(f"DEBUG_MODEL: ¿Tiene materiales? {has_materials}")
-    
-        # 🔆 LUCES MÁS INTENSAS PARA GLB
-        if has_materials or (hasattr(self, '_current_file_ext') and self._current_file_ext in ['.glb', '.gltf']):
-            print("DEBUG_MODEL: 💡 Configurando luces MODERADAS para GLB")
+
+        # 🔆 CONFIGURAR LUCES SEGÚN PRESENCIA DE MATERIALES
+        if has_materials:
+            # Modelo con materiales (GLB o OBJ+MTL): Luces moderadas
+            model_type = "GLB" if self._current_file_ext in ['.glb', '.gltf'] else "OBJ+MTL"
+            print(f"DEBUG_MODEL: 💡 Configurando luces MODERADAS para {model_type}")
             
-            # Luces moderadas para ver mejor las texturas
-            light_intensity = 1.5   # Más intenso que 0.3
-            ambient_intensity = 0.8  # Más ambiental
+            # Luces moderadas para preservar texturas/materiales
+            light_intensity = 1.5   # Moderado
+            ambient_intensity = 0.8  # Ambiental moderado
             
             # Luz direccional principal
             light = pyrender.DirectionalLight(color=[1.0, 1.0, 1.0], intensity=light_intensity)
             self.scene.add(light, pose=np.eye(4))
             
-            # Luz ambiental más intensa
+            # Luz ambiental
             ambient_light = pyrender.DirectionalLight(color=[0.6, 0.6, 0.6], intensity=ambient_intensity)
             ambient_pose = np.eye(4)
             ambient_pose[:3, 3] = [0, 0, -0.1]
             self.scene.add(ambient_light, pose=ambient_pose)
             
-            # Luz adicional desde otro ángulo
+            # Luz lateral
             side_light = pyrender.PointLight(color=[1.0, 1.0, 1.0], intensity=2.0)
             side_pose = np.eye(4)
             side_pose[:3, 3] = [0.1, 0.1, 0.05]
             self.scene.add(side_light, pose=side_pose)
             
-            print(f"DEBUG_MODEL: 💡 Luces GLB - Direccional: {light_intensity}, Ambiental: {ambient_intensity}, Lateral: 2.0")
+            print(f"DEBUG_MODEL: 💡 Luces {model_type} - Direccional: {light_intensity}, Ambiental: {ambient_intensity}, Lateral: 2.0")
+            
+            # 🎨 NO APLICAR MATERIAL - Usar los materiales originales
+            print(f"DEBUG_MODEL: 🎨 Manteniendo materiales originales del {model_type}")
             
         else:
-            # OBJ: Luces intensas para material rojo
-            print("DEBUG_MODEL: 💡 Configurando luces INTENSAS para OBJ")
+            # Modelo sin materiales: Aplicar material rojo por defecto
+            print("DEBUG_MODEL: 💡 Configurando luces INTENSAS para modelo sin materiales")
             light_intensity = 8.0
             point_intensity = 10.0
             
@@ -309,11 +360,10 @@ class PyrenderModelViewer:
             light_pose[:3, 3] = [0, 0, 0.1]
             self.scene.add(light2, pose=light_pose)
             
-            print(f"DEBUG_MODEL: 💡 Luces OBJ - Direccional: {light_intensity}, Puntual: {point_intensity}")
-    
-        # 🎨 APLICAR MATERIALES SOLO A OBJ
-        if not has_materials:
-            print("DEBUG_MODEL: 🎨 Aplicando material rojo a OBJ")
+            print(f"DEBUG_MODEL: 💡 Luces intensas - Direccional: {light_intensity}, Puntual: {point_intensity}")
+        
+            # 🎨 APLICAR MATERIAL ROJO SOLO SI NO HAY MATERIALES
+            print("DEBUG_MODEL: 🎨 Aplicando material rojo por defecto")
             material_rojo = pyrender.MetallicRoughnessMaterial(
                 baseColorFactor=[1.0, 0.0, 0.0, 1.0],
                 metallicFactor=0.8,
@@ -325,9 +375,7 @@ class PyrenderModelViewer:
                 if hasattr(mesh, 'primitives'):
                     for primitive in mesh.primitives:
                         primitive.material = material_rojo
-        else:
-            print("DEBUG_MODEL: 🎨 Manteniendo materiales originales del GLB")
-    
+        
         # Añadir modelo a la escena
         self.mesh_nodes = []
         for mesh in meshes:
