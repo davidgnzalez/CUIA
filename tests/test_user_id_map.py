@@ -13,9 +13,11 @@ sys.modules['ar_rendering.scene_renderer'] = types.ModuleType('scene_renderer')
 sys.modules['ar_rendering.ar_menu'] = types.ModuleType('ar_menu')
 # Provide minimal classes referenced by AppManager
 sys.modules['ar_rendering.ar_menu'].ARMenu = type('ARMenu', (), {})
-sys.modules['ar_rendering.scene_renderer'].PyrenderModelViewer = type('PyrenderModelViewer', (), {})
+sys.modules['ar_rendering.scene_renderer'].PyrenderModelViewer = type(
+    'PyrenderModelViewer', (), {}
+)
 
-from core.app_manager import AppManager
+from core.app_manager import AppManager  # noqa: E402
 
 
 def test_load_user_id_map(tmp_path):
