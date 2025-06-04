@@ -1,4 +1,8 @@
 import unittest
+import sys
+import pathlib
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 from ar_rendering.ar_menu import ARMenu
 
 class TestARMenuEmpty(unittest.TestCase):
