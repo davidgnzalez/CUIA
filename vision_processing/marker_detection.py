@@ -13,7 +13,7 @@ ARUCO_PARAMETERS = None
 # y la estimación de pose no será precisa.
 
 # Para pruebas sin calibración:
-# Si sabes el ancho y alto de tu frame, puedes hacer una estimación груба:
+# Si sabes el ancho y alto de tu frame, puedes hacer una estimación aproximada:
 # fx = fy = frame_width 
 # cx = frame_width / 2
 # cy = frame_height / 2
