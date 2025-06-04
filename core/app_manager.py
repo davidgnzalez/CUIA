@@ -3,6 +3,7 @@ import cv2
 import os
 import numpy as np
 import json
+import time
 from PIL import Image # Asegúrate de tener Pillow: pip install Pillow
 
 from core.config import (
@@ -20,6 +21,7 @@ from vision_processing import marker_detection  # Importar el nuevo módulo
 from ar_rendering import scene_renderer # Importar el renderizador de escena
 from ar_rendering.ar_menu import ARMenu
 from ar_rendering.scene_renderer import PyrenderModelViewer
+from audio_processing import get_voice_controller
 
 # Umbral de confianza para LBPH. Valores MÁS BAJOS son MEJOR confianza.
 # Un valor de 0 es una coincidencia perfecta.
@@ -94,6 +96,15 @@ class AppManager:
         self.selected_car = None
         self.model_marker_id = MODEL_MARKER_ID
 
+        # 🔧 AÑADIR CONTROLADOR DE VOZ
+        self.voice_controller = get_voice_controller()
+        print("DEBUG_APP: Controlador de voz inicializado")
+        
+        # 🔧 AÑADIR DEBUG DETALLADO
+        print(f"DEBUG_VOICE: ¿Controlador creado? {self.voice_controller is not None}")
+        print(f"DEBUG_VOICE: ¿Micrófono disponible? {self.voice_controller.microphone is not None}")
+        print(f"DEBUG_VOICE: Estado inicial: {self.voice_controller.get_status_text()}")
+
         print(f"AppManager inicializado. Estado: {self.current_state}")
 
     def _load_user_id_map(self):
@@ -144,6 +155,7 @@ class AppManager:
             self.numeric_id_to_user_str_map = {v: k for k, v in self.user_id_map.items()}
 
     def process_frame(self, frame):
+        """Procesar frame según el estado actual con control de voz"""
         display_frame = frame.copy()
         height, width = frame.shape[:2]
 
@@ -283,6 +295,11 @@ class AppManager:
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
 
         elif self.current_state == STATE_MAIN_MENU_AR:
+            # 🔧 MANEJAR COMANDOS DE VOZ PRIMERO
+            voice_command = self.voice_controller.get_voice_command()
+            if voice_command:
+                self._handle_voice_command(voice_command)
+            
             # Detectar marcador de menú (ID 23)
             corners, ids, frame_with_aruco_markers, rvecs, tvecs = \
                 marker_detection.detect_and_estimate_pose(
@@ -368,9 +385,106 @@ class AppManager:
             cv2.putText(display_frame, f"Estado: {self.current_state}", (10, 30),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.7, (128, 128, 128), 2)
         
+        # 🔧 MOSTRAR ESTADO DEL CONTROL DE VOZ
+        voice_status = self.voice_controller.get_status_text()
+        cv2.putText(display_frame, voice_status, (display_frame.shape[1] - 120, 30), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 2)
+        
+        # Mostrar instrucciones de voz
+        if not self.selected_car:  # Solo en el menú
+            instructions = self.voice_controller.get_instructions_text()
+            cv2.putText(display_frame, instructions, (10, display_frame.shape[0] - 30), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 0), 1)
+        
+        # 🔧 MOSTRAR FEEDBACK DE COMANDO DE VOZ
+        if hasattr(self, '_voice_feedback_message') and hasattr(self, '_voice_feedback_timer'):
+            # Mostrar mensaje por 3 segundos
+            if time.time() - self._voice_feedback_timer < 3.0:
+                cv2.putText(display_frame, self._voice_feedback_message, (10, 200), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+            else:
+                # Limpiar mensaje después de 3 segundos
+                delattr(self, '_voice_feedback_message')
+                delattr(self, '_voice_feedback_timer')
+        
         return display_frame
 
+    def _handle_voice_command(self, command):
+        """Manejar comandos de voz"""
+        print(f"DEBUG_VOICE: 🎙️ Procesando comando: {command}")
+        
+        if command['type'] == 'car_selection':
+            car_name = command['car']
+            
+            # Buscar el coche correspondiente
+            target_car = None
+            
+            if car_name == 'ferrari':
+                for car in self.ar_menu.menu_items:
+                    if 'ferrari' in car['name'].lower():
+                        target_car = car
+                        break
+                        
+            elif car_name == 'porsche':
+                for car in self.ar_menu.menu_items:
+                    if 'porsche' in car['name'].lower():
+                        target_car = car
+                        break
+            
+            if target_car:
+                print(f"DEBUG_VOICE: 🚗 Cargando {target_car['name']} por comando de voz")
+                
+                # Seleccionar el coche automáticamente
+                self.selected_car = target_car
+                
+                # Cargar el modelo inmediatamente
+                success = self.model_viewer.load_car_model(target_car)
+                if success:
+                    print(f"DEBUG_VOICE: ✅ {target_car['name']} cargado por voz")
+                    
+                    # Mostrar mensaje visual
+                    self._voice_feedback_message = f"🎙️ {target_car['name']} seleccionado por voz"
+                    self._voice_feedback_timer = time.time()
+                    
+                else:
+                    print(f"DEBUG_VOICE: ❌ Error cargando {target_car['name']} por voz")
+                    self.selected_car = None
+            else:
+                print(f"DEBUG_VOICE: ❌ No se encontró coche para '{car_name}'")
+        
+        elif command['type'] == 'navigation':
+            action = command['action']
+            
+            if action == 'menu':
+                if self.selected_car:
+                    print(f"DEBUG_VOICE: 🔙 Volviendo al menú desde {self.selected_car['name']} por voz")
+                    self.selected_car = None
+                    # Limpiar modelo cargado
+                    self.model_viewer.cleanup()
+                    self.model_viewer.current_model = None
+                    
+                    # Feedback visual
+                    self._voice_feedback_message = "🎙️ Vuelto al menú por voz"
+                    self._voice_feedback_timer = time.time()
+                else:
+                    print("DEBUG_VOICE: Ya estás en el menú principal")
+            
+            elif action == 'logout':
+                print(f"DEBUG_VOICE: 🚪 Cerrando sesión por comando de voz")
+                self.logged_in_user_str = None
+                self.selected_car = None
+                # Limpiar modelo
+                self.model_viewer.cleanup()
+                self.model_viewer.current_model = None
+                self.current_state = STATE_WELCOME
+                
+                # Feedback visual temporal
+                self._voice_feedback_message = "🎙️ Sesión cerrada por voz"
+                self._voice_feedback_timer = time.time()
+
     def handle_input(self, key, current_frame):
+        """Manejar entrada con control de voz activado/desactivado"""
+        
         if self.current_state == STATE_WELCOME:
             if key == ord('l'): # 'L' para Login
                 print("Transicionando a STATE_LOGIN")
@@ -405,11 +519,14 @@ class AppManager:
                 self.current_state = STATE_WELCOME # Volver a WELCOME en lugar de LOGIN directo
         
         elif self.current_state == STATE_MAIN_MENU_AR:
-            # Manejar navegación del menú AR cuando se detecta marcador ID 23
-            corners, ids, _, _, _ = marker_detection.detect_and_estimate_pose(
-                current_frame, self.camera_matrix_cv, self.dist_coeffs_cv, scene_renderer.MARKER_SIZE_METERS
+            # Obtener ids de marcadores antes de usarlos
+            corners, ids, frame_with_aruco_markers, rvecs, tvecs = marker_detection.detect_and_estimate_pose(
+                current_frame,
+                self.camera_matrix_cv,
+                self.dist_coeffs_cv,
+                scene_renderer.MARKER_SIZE_METERS
             )
-            
+
             # 🔧 MANEJAR TECLA 'M' PARA VOLVER AL MENÚ (SIN NECESIDAD DE MARCADOR)
             if key == ord('m') or key == ord('M'):
                 if self.selected_car:
@@ -432,6 +549,20 @@ class AppManager:
                 self.model_viewer.cleanup()
                 self.model_viewer.current_model = None
                 self.current_state = STATE_WELCOME
+                return  # ← IMPORTANTE: return para no procesar más
+            
+            # 🔧 AÑADIR TECLA 'V' PARA ACTIVAR/DESACTIVAR VOZ
+            elif key == ord('v') or key == ord('V'):
+                if self.voice_controller.is_listening():
+                    self.voice_controller.stop_listening()
+                    print("DEBUG_VOICE: 🔇 Control de voz DESACTIVADO")
+                else:
+                    success = self.voice_controller.start_listening()
+                    if success:
+                        print("DEBUG_VOICE: 🎤 Control de voz ACTIVADO")
+                        print("DEBUG_VOICE: 🗣️ Di 'Ferrari', 'Porsche', 'Menú' o 'Salir'")
+                    else:
+                        print("DEBUG_VOICE: ❌ No se pudo activar control de voz")
                 return  # ← IMPORTANTE: return para no procesar más
             
             # Si hay marcador ID 23 visible, permitir selección
@@ -479,7 +610,15 @@ class AppManager:
         """Limpiar recursos al cerrar la aplicación"""
         if hasattr(self, 'model_viewer') and self.model_viewer:
             self.model_viewer.cleanup()
-        print("AppManager: Recursos de ventana limpiados.")
+        # 🔧 LIMPIAR CONTROL DE VOZ
+        if hasattr(self, 'voice_controller'):
+            self.voice_controller.cleanup()
+        
+        # También limpiar instancia global
+        from audio_processing import cleanup_voice_controller
+        cleanup_voice_controller()
+        
+        print("AppManager: Recursos limpiados incluyendo control de voz.")
 
     # AÑADIR debug en load_car_model() - Verificar carga exitosa:
 
