@@ -138,25 +138,22 @@ class PyrenderModelViewer:
         import os
         from trimesh.transformations import rotation_matrix, translation_matrix
 
-        # 🔥 DEBUG CRÍTICO: Verificar qué coche se está cargando
+        # Debug inicial...
         print(f"DEBUG_MODEL: 🏎️ === CARGANDO MODELO ===")
         print(f"DEBUG_MODEL: Coche recibido: {car_dict}")
         print(f"DEBUG_MODEL: Nombre: {car_dict.get('name', 'DESCONOCIDO')}")
         print(f"DEBUG_MODEL: Ruta: {car_dict.get('model_path', 'SIN RUTA')}")
-        print(f"DEBUG_MODEL: Escala: {car_dict.get('scale', 0.05)}")
-        print(f"DEBUG_MODEL: Elevación: {car_dict.get('elevation', 0.01)}")
         print(f"DEBUG_MODEL: ================================")
 
         model_path = f"assets/3d_models/{car_dict['model_path']}"
         scale = car_dict.get('scale', 0.05)
         elevation = car_dict.get('elevation', 0.01)
         
-        # 🔧 GUARDAR NOMBRE DEL MODELO PARA LOGS
         self._current_model_name = car_dict.get('name', 'Modelo desconocido')
 
         print(f"DEBUG_MODEL: Ruta completa: {model_path}")
-        print(f"DEBUG_MODEL: Escala aplicada: {scale}")
-        print(f"DEBUG_MODEL: Elevación aplicada: {elevation}")
+        print(f"DEBUG_MODEL: Ruta absoluta: {os.path.abspath(model_path)}")
+        print(f"DEBUG_MODEL: ¿Existe archivo? {os.path.exists(model_path)}")
 
         if not os.path.exists(model_path):
             print(f"DEBUG_MODEL: ❌ Modelo no encontrado: {model_path}")
@@ -164,48 +161,14 @@ class PyrenderModelViewer:
 
         _, ext = os.path.splitext(model_path)
         ext = ext.lower()
-        
-        # 🔧 GUARDAR LA EXTENSIÓN PARA USO POSTERIOR
         self._current_file_ext = ext
         print(f"DEBUG_MODEL: 📁 Tipo de archivo: {ext}")
 
         if ext in ['.glb', '.gltf']:
-            print("DEBUG_MODEL: 🎨 Cargando GLB/GLTF con materiales originales")
-            model = trimesh.load(model_path, process=True)  # Mantener texturas
+            print("DEBUG_MODEL: 🎨 Cargando GLB/GLTF con sanitización de texturas")
+            model = trimesh.load(model_path, process=True)
         elif ext == '.obj':
             print("DEBUG_MODEL: 🎨 Cargando OBJ con materiales MTL")
-            
-            # Verificar si existe el archivo MTL correspondiente
-            mtl_path = model_path.replace('.obj', '.mtl')
-            print(f"DEBUG_MODEL: 🔍 Buscando MTL en: {mtl_path}")
-            
-            if os.path.exists(mtl_path):
-                print("DEBUG_MODEL: ✅ Archivo MTL encontrado")
-                try:
-                    with open(mtl_path, 'r') as f:
-                        mtl_content = f.read()
-                        print(f"DEBUG_MODEL: 📄 Contenido MTL (primeras 500 chars):")
-                        print(mtl_content[:500])
-                        
-                        # Buscar referencias a texturas
-                        texture_refs = []
-                        for line in mtl_content.split('\n'):
-                            if line.strip().startswith(('map_Kd', 'map_Ka', 'map_Ks', 'map_Bump')):
-                                texture_refs.append(line.strip())
-                        
-                        if texture_refs:
-                            print(f"DEBUG_MODEL: 🖼️ Referencias de texturas encontradas:")
-                            for ref in texture_refs:
-                                print(f"DEBUG_MODEL:   {ref}")
-                        else:
-                            print("DEBUG_MODEL: ⚠️ No se encontraron referencias de texturas en MTL")
-                            
-                except Exception as e:
-                    print(f"DEBUG_MODEL: ❌ Error leyendo MTL: {e}")
-            else:
-                print("DEBUG_MODEL: ❌ Archivo MTL no encontrado")
-            
-            # Cargar modelo
             model = trimesh.load(model_path, process=True)
         else:
             print(f"DEBUG_MODEL: ❌ Formato {ext} no soportado")
@@ -227,48 +190,214 @@ class PyrenderModelViewer:
                 pose, geom_name = model.graph[node_name]
                 geom = model.geometry[geom_name].copy()
                 geom.apply_transform(pose)
-                mat = getattr(geom.visual, 'material', None)
-                if mat is not None:
-                    for attr in ['baseColorTexture', 'metallicRoughnessTexture', 'normalTexture', 'occlusionTexture']:
-                        tex = getattr(mat, attr, None)
-                        if hasattr(tex, 'mode') and tex.mode in ('LA', 'L'):
-                            converted = tex.convert('RGBA' if tex.mode == 'LA' else 'RGB')
-                            setattr(mat, attr, converted)
+                
+                # 🔧 SANITIZAR MATERIALES PROBLEMÁTICOS PARA GLB
+                if ext in ['.glb', '.gltf']:
+                    self._sanitize_glb_materials(geom)
+                
                 geom.apply_transform(transform)
                 meshes.append(pyrender.Mesh.from_trimesh(geom, smooth=ext in ['.glb', '.gltf']))
 
             self.current_model = meshes
         else:
+            # Modelo simple (Ferrari OBJ)
             model.apply_translation(-model.centroid)
             model.apply_scale(scale)
             rot_x = rotation_matrix(np.radians(90), [1, 0, 0])
             model.apply_transform(rot_x)
             lift = translation_matrix([0, 0, elevation])
             model.apply_transform(lift)
-
-            # Crear mesh manteniendo suavizado para ambos formatos
-            self.current_model = [pyrender.Mesh.from_trimesh(model, smooth=True)]  # ← CAMBIO: smooth=True para ambos
-        print(f"DEBUG_MODEL: ✅ Modelo {self._current_model_name} cargado correctamente")
-        print(f"DEBUG_MODEL: Smooth: True")
-        
-        # Debug de materiales cargados
-        print(f"DEBUG_MODEL: Creados {len(self.current_model)} meshes para {self._current_model_name}")
-        for i, mesh in enumerate(self.current_model):
-            print(f"DEBUG_MODEL: Mesh {i}: {len(mesh.primitives) if hasattr(mesh, 'primitives') else 0} primitivas")
             
-            # 🔍 DEBUG: Verificar materiales en primitivas
-            if hasattr(mesh, 'primitives'):
-                for j, primitive in enumerate(mesh.primitives):
-                    if primitive.material:
-                        print(f"DEBUG_MODEL: Primitiva {j} tiene material MTL")
-                    else:
-                        print(f"DEBUG_MODEL: Primitiva {j} SIN material")
-    
+            # 🔧 SANITIZAR MATERIALES PARA OBJ TAMBIÉN
+            if ext == '.obj':
+                self._sanitize_obj_materials(model)
+
+            self.current_model = [pyrender.Mesh.from_trimesh(model, smooth=True)]
+        
+        print(f"DEBUG_MODEL: ✅ Modelo {self._current_model_name} cargado correctamente")
+        print(f"DEBUG_MODEL: Creados {len(self.current_model)} meshes")
         return True
-    
+
+    def _sanitize_glb_materials(self, geom):
+        """Sanitizar materiales de GLB para evitar errores de texturas"""
+        print("DEBUG_MODEL: 🧹 Sanitizando materiales GLB...")
+        
+        if hasattr(geom, 'visual') and hasattr(geom.visual, 'material'):
+            mat = geom.visual.material
+            if mat is not None:
+                print(f"DEBUG_MODEL: Material encontrado: {type(mat)}")
+                
+                # 🔧 OPCIÓN 1: Reemplazar con material sólido simple
+                from trimesh.visual.material import PBRMaterial
+                
+                # Crear material sólido basado en el color base si existe
+                base_color = [0.5, 0.5, 0.5, 1.0]  # Gris por defecto
+                
+                if hasattr(mat, 'baseColorFactor') and mat.baseColorFactor is not None:
+                    base_color = mat.baseColorFactor
+                    print(f"DEBUG_MODEL: Usando color base: {base_color}")
+                
+                # Crear material simple sin texturas problemáticas
+                safe_material = PBRMaterial(
+                    baseColorFactor=base_color,
+                    metallicFactor=0.1,
+                    roughnessFactor=0.7,
+                    # No incluir texturas que pueden causar problemas
+                    baseColorTexture=None,
+                    metallicRoughnessTexture=None,
+                    normalTexture=None,
+                    occlusionTexture=None,
+                    emissiveTexture=None
+                )
+                
+                geom.visual.material = safe_material
+                print("DEBUG_MODEL: ✅ Material GLB sanitizado con colores sólidos")
+
+    def _sanitize_obj_materials(self, model):
+        """Sanitizar materiales de OBJ para mantener compatibilidad"""
+        print("DEBUG_MODEL: 🧹 Verificando materiales OBJ...")
+        
+        if hasattr(model, 'visual') and hasattr(model.visual, 'material'):
+            if model.visual.material is not None:
+                print("DEBUG_MODEL: ✅ Material OBJ preservado (compatible)")
+            else:
+                print("DEBUG_MODEL: ⚠️ OBJ sin material - se aplicará rojo por defecto")
+        else:
+            print("DEBUG_MODEL: ⚠️ OBJ sin visual.material - se aplicará rojo por defecto")
+
+    # MODIFICAR render_model_on_marker() - Manejo de errores de texturas:
+
+    def render_model_on_marker(self, frame, rvec, tvec, camera_matrix, dist_coeffs):
+        """Renderizar con manejo robusto de errores de texturas"""
+        
+        # Obtener nombre del modelo
+        model_name = "Modelo desconocido"
+        if hasattr(self, '_current_model_name'):
+            model_name = self._current_model_name
+        elif hasattr(self, '_current_file_ext'):
+            if self._current_file_ext == '.obj':
+                model_name = "Ferrari F40"
+            elif self._current_file_ext in ['.glb', '.gltf']:
+                model_name = "Porsche 911"
+        
+        print(f"DEBUG_MODEL: 🎬 Renderizando {model_name}...")
+        
+        if not self.current_model:
+            print(f"DEBUG_MODEL: No hay modelo cargado")
+            return frame
+        
+        try:
+            # Configurar escena solo la primera vez
+            self.setup_scene(camera_matrix, frame.shape[1], frame.shape[0])
+            
+            if not self.initialized:
+                print(f"DEBUG_MODEL: ❌ Escena no inicializada")
+                return frame
+            
+            # Calcular pose
+            R, _ = cv2.Rodrigues(rvec)
+            T = tvec.reshape(3)
+            
+            pose_cv = np.eye(4)
+            pose_cv[:3, :3] = R
+            pose_cv[:3, 3] = T
+            
+            print(f"DEBUG_MODEL: 📍 Posición marcador: {T}")
+            
+            # Convertir a sistema OpenGL
+            cv_to_gl = np.array([[1, 0,  0, 0],
+                                 [0, -1, 0, 0],
+                                 [0, 0, -1, 0],
+                                 [0, 0,  0, 1]], dtype=np.float32)
+            
+            pose_gl = cv_to_gl @ pose_cv
+            print(f"DEBUG_MODEL: 🔄 Pose OpenGL calculada")
+            
+            # Actualizar pose del modelo
+            for node in self.mesh_nodes:
+                node.matrix = pose_gl
+            
+            # 🔧 RENDERIZAR CON MANEJO DE ERRORES DE TEXTURAS
+            print(f"DEBUG_MODEL: 🎨 Intentando renderizar {model_name}...")
+            try:
+                color, depth = self.renderer.render(self.scene, flags=RenderFlags.RGBA)
+                print(f"DEBUG_MODEL: ✅ Renderizado exitoso de {model_name}")
+                
+            except Exception as texture_error:
+                print(f"DEBUG_MODEL: ⚠️ Error de texturas en {model_name}: {texture_error}")
+                
+                # 🔧 FALLBACK: Recrear escena con materiales limpios
+                print(f"DEBUG_MODEL: 🔄 Intentando fallback sin texturas...")
+                
+                # Limpiar escena actual
+                self.cleanup()
+                self.initialized = False
+                
+                # Recargar modelo con materiales forzados limpios
+                if hasattr(self, '_current_file_ext') and self._current_file_ext in ['.glb', '.gltf']:
+                    # Forzar colores sólidos para GLB
+                    for mesh in self.current_model:
+                        if hasattr(mesh, 'primitives'):
+                            for primitive in mesh.primitives:
+                                # Material sólido simple
+                                primitive.material = pyrender.MetallicRoughnessMaterial(
+                                    baseColorFactor=[0.2, 0.4, 0.8, 1.0],  # Azul Porsche
+                                    metallicFactor=0.3,
+                                    roughnessFactor=0.7
+                                )
+                
+                # Reintentar configurar escena
+                self.setup_scene(camera_matrix, frame.shape[1], frame.shape[0])
+                
+                # Actualizar poses de nuevo
+                for node in self.mesh_nodes:
+                    node.matrix = pose_gl
+                
+                # Renderizar con materiales limpios
+                color, depth = self.renderer.render(self.scene, flags=RenderFlags.RGBA)
+                print(f"DEBUG_MODEL: ✅ Fallback exitoso para {model_name}")
+        
+            # Procesar resultado del renderizado
+            print(f"DEBUG_MODEL: 🖼️ Color shape: {color.shape}")
+            print(f"DEBUG_MODEL: 🎨 Color range: {color.min()}-{color.max()}")
+            
+            # Aplicar al frame
+            mask = color[:, :, 3] > 0
+            pixel_count = np.sum(mask)
+            print(f"DEBUG_MODEL: 🔢 Píxeles visibles: {pixel_count} de {color.shape[0]*color.shape[1]}")
+            
+            if pixel_count > 0:
+                color_bgr = cv2.cvtColor(color, cv2.COLOR_RGBA2BGR)
+                frame[mask] = color_bgr[mask]
+                print(f"DEBUG_MODEL: ✅ {model_name} renderizado con píxeles visibles!")
+            else:
+                print(f"DEBUG_MODEL: ⚠️ {model_name} renderizado pero SIN píxeles visibles")
+                # Indicador visual
+                cv2.circle(frame, (320, 240), 30, (255, 0, 255), 3)
+                cv2.putText(frame, f"{model_name} (invisible)", (200, 240), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 255), 2)
+        
+            return frame
+            
+        except Exception as e:
+            print(f"DEBUG_MODEL: 💥 Error crítico renderizando {model_name}: {e}")
+            import traceback
+            traceback.print_exc()
+            
+            # Fallback final: Círculo verde
+            cv2.circle(frame, (320, 240), 50, (0, 255, 0), 3)
+            cv2.putText(frame, f"{model_name} (ERROR)", (250, 240), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+            return frame
+        
     def setup_scene(self, camera_matrix, frame_width, frame_height):
         """Configurar escena detectando materiales en GLB y OBJ"""
+        print(f"DEBUG_MODEL: 🔧 === CONFIGURANDO ESCENA ===")
+        print(f"DEBUG_MODEL: initialized: {self.initialized}")
+        print(f"DEBUG_MODEL: current_model: {self.current_model is not None}")
+        
         if self.initialized or not self.current_model:
+            print(f"DEBUG_MODEL: ⚠️ Saltando setup_scene - ya inicializado o sin modelo")
             return
         
         print("DEBUG_MODEL: 🔧 Configurando escena...")
@@ -318,7 +447,7 @@ class PyrenderModelViewer:
         # 🔆 CONFIGURAR LUCES SEGÚN PRESENCIA DE MATERIALES
         if has_materials:
             # Modelo con materiales (GLB o OBJ+MTL): Luces moderadas
-            model_type = "GLB" if self._current_file_ext in ['.glb', '.gltf'] else "OBJ+MTL"
+            model_type = "GLB" if hasattr(self, '_current_file_ext') and self._current_file_ext in ['.glb', '.gltf'] else "OBJ+MTL"
             print(f"DEBUG_MODEL: 💡 Configurando luces MODERADAS para {model_type}")
             
             # Luces moderadas para preservar texturas/materiales
@@ -386,124 +515,42 @@ class PyrenderModelViewer:
         self.renderer = pyrender.OffscreenRenderer(frame_width, frame_height)
         
         self.initialized = True
-        print("DEBUG_MODEL: ✅ Escena configurada")
-    
-    def render_model_on_marker(self, frame, rvec, tvec, camera_matrix, dist_coeffs):
-        """Renderizar con debug de visibilidad dinámico"""
-        
-        # 🔧 OBTENER NOMBRE DEL MODELO ACTUAL
-        model_name = "Modelo desconocido"
-        if hasattr(self, '_current_model_name'):
-            model_name = self._current_model_name
-        elif hasattr(self, '_current_file_ext'):
-            if self._current_file_ext == '.obj':
-                model_name = "Ferrari F40"
-            elif self._current_file_ext in ['.glb', '.gltf']:
-                model_name = "Porsche 911"
-        
-        print(f"DEBUG_MODEL: 🎬 Renderizando {model_name}...")
-        
-        if not self.current_model:
-            print(f"DEBUG_MODEL: No hay modelo cargado")
-            return frame
-        
-        try:
-            # Configurar escena solo la primera vez
-            self.setup_scene(camera_matrix, frame.shape[1], frame.shape[0])
-            
-            if not self.initialized:
-                print(f"DEBUG_MODEL: ❌ Escena no inicializada")
-                return frame
-            
-            # Calcular pose
-            R, _ = cv2.Rodrigues(rvec)
-            T = tvec.reshape(3)
-            
-            pose_cv = np.eye(4)
-            pose_cv[:3, :3] = R
-            pose_cv[:3, 3] = T
-            
-            print(f"DEBUG_MODEL: 📍 Posición marcador: {T}")
-            
-            # Convertir a sistema OpenGL
-            cv_to_gl = np.array([[1, 0,  0, 0],
-                                 [0, -1, 0, 0],
-                                 [0, 0, -1, 0],
-                                 [0, 0,  0, 1]], dtype=np.float32)
-            
-            pose_gl = cv_to_gl @ pose_cv
-            print(f"DEBUG_MODEL: 🔄 Pose OpenGL: \n{pose_gl}")
-            
-            # Actualizar pose del modelo
-            for node in self.mesh_nodes:
-                node.matrix = pose_gl
-            
-            # Renderizar modelo 3D
-            print(f"DEBUG_MODEL: 🎨 Renderizando {model_name}...")
-            color, depth = self.renderer.render(self.scene, flags=RenderFlags.RGBA)
-            
-            # 🔍 DEBUG DE VISIBILIDAD
-            print(f"DEBUG_MODEL: 🖼️ Color shape: {color.shape}")
-            print(f"DEBUG_MODEL: 🎨 Color range: {color.min()}-{color.max()}")
-            print(f"DEBUG_MODEL: 👁️ Alpha channel: {color[:,:,3].min()}-{color[:,:,3].max()}")
-            
-            # Contar píxeles no transparentes
-            mask = color[:, :, 3] > 0
-            pixel_count = np.sum(mask)
-            print(f"DEBUG_MODEL: 🔢 Píxeles visibles: {pixel_count} de {color.shape[0]*color.shape[1]}")
-            
-            if pixel_count > 0:
-                color_bgr = cv2.cvtColor(color, cv2.COLOR_RGBA2BGR)
-                frame[mask] = color_bgr[mask]
-                print(f"DEBUG_MODEL: ✅ {model_name} renderizado con píxeles visibles!")
-            else:
-                print(f"DEBUG_MODEL: ⚠️ {model_name} renderizado pero SIN píxeles visibles")
-                # Dibujar indicador de que se procesó pero no se ve
-                cv2.circle(frame, (320, 240), 30, (255, 0, 255), 3)  # Magenta
-                cv2.putText(frame, f"{model_name} (invisible)", (200, 240), 
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 255), 2)
-        
-            return frame
-            
-        except Exception as e:
-            print(f"DEBUG_MODEL: 💥 Error renderizando {model_name}: {e}")
-            import traceback
-            traceback.print_exc()
-            
-            # Fallback: Círculo verde
-            cv2.circle(frame, (320, 240), 50, (0, 255, 0), 3)
-            cv2.putText(frame, model_name, (270, 240), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-            return frame
-    
+        print("DEBUG_MODEL: ✅ Escena configurada exitosamente")
+
     def cleanup(self):
-        """Limpiar recursos y variables"""
-        if self.renderer:
+        """Limpiar recursos del renderer"""
+        print("DEBUG_MODEL: 🧹 Limpiando recursos...")
+        
+        # Limpiar renderer
+        if hasattr(self, 'renderer') and self.renderer is not None:
             try:
                 self.renderer.delete()
                 print("DEBUG_MODEL: Renderer limpiado")
-            except:
-                pass
-
-        if self.scene and self.mesh_nodes:
-            for node in self.mesh_nodes:
-                try:
-                    self.scene.remove_node(node)
-                except Exception:
-                    pass
-    
-        self.renderer = None
-        self.scene = None
-        self.current_model = None
-        self.mesh_nodes = []
-        self.mesh_node = None
+            except Exception as e:
+                print(f"DEBUG_MODEL: Error limpiando renderer: {e}")
+            self.renderer = None
+        
+        # Limpiar escena
+        if hasattr(self, 'scene') and self.scene is not None:
+            self.scene = None
+            print("DEBUG_MODEL: Escena limpiada")
+        
+        # Limpiar nodos
+        if hasattr(self, 'mesh_nodes'):
+            self.mesh_nodes = []
+            print("DEBUG_MODEL: Nodos de mesh limpiados")
+        
+        # Limpiar variables de estado
         self.camera_node = None
+        self.mesh_node = None
+        self.current_model = None
         self.initialized = False
         
-        # 🔧 LIMPIAR VARIABLES DE NOMBRE Y EXTENSIÓN
+        # Limpiar variables de debug si existen
         if hasattr(self, '_current_model_name'):
             delattr(self, '_current_model_name')
         if hasattr(self, '_current_file_ext'):
             delattr(self, '_current_file_ext')
         
-        print("DEBUG_MODEL: Todos los recursos limpiados")
+        print("DEBUG_MODEL: ✅ Todos los recursos limpiados")
+

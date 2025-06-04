@@ -47,17 +47,20 @@ def main():
 
         key = cv2.waitKey(1) & 0xFF
 
-        # Primero permitir que AppManager maneje la tecla
+        # 🔧 PERMITIR QUE APPMANAGER MANEJE TODAS LAS TECLAS PRIMERO
         if key != 255:
-            app_manager.handle_input(key, frame)
-        
-        # Después verificar si 'q' debe cerrar la aplicación
-        if key == ord('q'):
-            # Simplificación: 'q' siempre intenta salir de la aplicación
-            # Cualquier manejo específico de estado ya fue atendido por app_manager.handle_input()
-            print("Tecla 'q' presionada. Cerrando aplicación...")
-            running = False
-
+            # AppManager decide si debe procesar la tecla
+            app_result = app_manager.handle_input(key, frame)
+            
+            # 🔧 SOLO SALIR CON 'Q' SI ESTAMOS EN WELCOME O LOGIN
+            if key == ord('q'):
+                if current_app_state in [STATE_WELCOME, STATE_LOGIN]:
+                    print("Tecla 'q' presionada en estado permitido. Cerrando aplicación...")
+                    running = False
+                else:
+                    print(f"Tecla 'q' manejada por AppManager en estado {current_app_state}")
+                    # No cerrar la aplicación, dejar que AppManager la maneje
+    
     cap.release()
     app_manager.cleanup() 
     print("Aplicación cerrada correctamente.")
@@ -71,3 +74,14 @@ if __name__ == "__main__":
         traceback.print_exc()
     finally:
         cv2.destroyAllWindows()
+
+# core/app_manager.py (añadir a la clase AppManager)
+
+def get_current_state(self):
+    """Devuelve el estado actual de la aplicación"""
+    return self.current_state
+
+def set_current_state(self, new_state):
+    """Cambia el estado actual de la aplicación"""
+    print(f"DEBUG_APP: Cambiando estado de {self.current_state} a {new_state}")
+    self.current_state = new_state

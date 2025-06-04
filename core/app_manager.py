@@ -298,7 +298,7 @@ class AppManager:
                 # Si NO hay coche seleccionado, mostrar menú
                 if not self.selected_car:
                     display_frame = self.ar_menu.draw_menu_overlay(frame_with_aruco_markers, corners)
-                    cv2.putText(display_frame, "ESPACIO: Seleccionar Ferrari F40", (10, 120), 
+                    cv2.putText(display_frame, "1-2: Seleccionar | ESPACIO: Ver modelo 3D", (10, 120), 
                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1)
                 
                 # Si YA hay coche seleccionado, mostrar modelo 3D REAL
@@ -313,36 +313,56 @@ class AppManager:
                             self.camera_matrix_cv, 
                             self.dist_coeffs_cv
                         )
-                        # Agregar información sobre el coche seleccionado
-                        cv2.putText(display_frame, f"🏎️ {self.selected_car['name']} - MODELO 3D REAL", (10, 120), 
-                                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
-                        cv2.putText(display_frame, f"Archivo: {self.selected_car['model_path']}", (10, 150), 
-                                   cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1)
-                        cv2.putText(display_frame, "Presiona 'C' para volver al menu", (10, 180), 
+                        
+                        # 🔧 INFORMACIÓN MÁS LIMPIA Y COMPACTA
+                        # Solo mostrar nombre del coche
+                        cv2.putText(display_frame, f"{self.selected_car['name']}", (10, 100), 
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
+                        
+                        # Instrucciones simplificadas
+                        cv2.putText(display_frame, "M: Menu | Q: Logout", (10, 130), 
                                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1)
+                       
                     except Exception as e:
                         print(f"ERROR_PYRENDER: {e}")
                         display_frame = frame_with_aruco_markers
-                        cv2.putText(display_frame, f"❌ Error cargando {self.selected_car['name']}", (10, 120), 
+                        cv2.putText(display_frame, f"Error: {self.selected_car['name']}", (10, 100), 
                                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
 
             else:
                 # No hay marcador visible
                 display_frame = frame_with_aruco_markers
-                cv2.putText(display_frame, "Muestra marcador ID 23 para menu", (10, 90), 
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,150,0), 1)
+                
                 if self.selected_car:
-                    cv2.putText(display_frame, f"Ferrari seleccionado: {self.selected_car['name']}", (10, 120), 
-                               cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
-                    cv2.putText(display_frame, "Muestra marcador ID 23 para ver Ferrari 3D", (10, 150), 
+                    # Hay coche seleccionado pero no se ve el marcador
+                    cv2.putText(display_frame, f"Coche seleccionado: {self.selected_car['name']}", (10, 90), 
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+                    cv2.putText(display_frame, "Muestra marcador ID 23 para ver modelo 3D", (10, 120), 
                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1)
+                    cv2.putText(display_frame, "Presiona 'M' para volver al menu sin marcador", (10, 150), 
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 150, 0), 1)
+                else:
+                    # No hay coche seleccionado
+                    cv2.putText(display_frame, "Muestra marcador ID 23 para abrir menu", (10, 90), 
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255,150,0), 2)
+                    cv2.putText(display_frame, "Selecciona Ferrari F40 o Porsche 911", (10, 120), 
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
 
-            # Textos del estado
-            cv2.putText(display_frame, "Estado: FERRARI SHOWROOM", (10, 30),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 0, 0), 2)
-            welcome_message = f"Bienvenido, {self.logged_in_user_str if self.logged_in_user_str else 'Usuario'}!"
+            # 🔧 TÍTULO DINÁMICO LIMPIO (SIN SÍMBOLOS EXTRAÑOS)
+            if self.selected_car:
+                titulo = f"Estado: {self.selected_car['name'].upper()} SHOWROOM"
+                color_titulo = (0, 255, 255)  # Cyan para modelo seleccionado
+            else:
+                titulo = "Estado: CAR SHOWROOM - Selecciona tu coche"
+                color_titulo = (255, 0, 0)  # Rojo para menú
+
+            cv2.putText(display_frame, titulo, (10, 30),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, color_titulo, 2)  # ← Tamaño reducido de 0.8 a 0.7
+
+            # Mensaje de bienvenida más pequeño
+            welcome_message = f"Bienvenido, {self.logged_in_user_str}!"
             cv2.putText(display_frame, welcome_message, (10, 60),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0,255,0), 2)
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0,255,0), 2)  # ← Tamaño reducido de 0.7 a 0.6
         
         else:  # Estado desconocido
             cv2.putText(display_frame, f"Estado: {self.current_state}", (10, 30),
@@ -390,234 +410,117 @@ class AppManager:
                 current_frame, self.camera_matrix_cv, self.dist_coeffs_cv, scene_renderer.MARKER_SIZE_METERS
             )
             
-            # Si hay marcador ID 23 visible, permitir selección del Ferrari
-            if ids is not None and 23 in ids:
-                selected_car = self.ar_menu.handle_selection(key)
-                if selected_car:
-                    # 🔥 DEBUG CRÍTICO: Verificar qué coche se selecciona
-                    print(f"DEBUG_APP: 🏎️ === COCHE SELECCIONADO ===")
-                    print(f"DEBUG_APP: Nombre: {selected_car['name']}")
-                    print(f"DEBUG_APP: Ruta: {selected_car['model_path']}")
-                    print(f"DEBUG_APP: Escala: {selected_car.get('scale', 0.05)}")
-                    print(f"DEBUG_APP: Elevación: {selected_car.get('elevation', 0.01)}")
-                    print(f"DEBUG_APP: =====================================")
-                    
-                    self.selected_car = selected_car
-                    print(f"DEBUG_APP: Coche seleccionado: {selected_car['name']}")
-                    print(f"DEBUG_APP: Intentando cargar modelo: {selected_car['model_path']}")
-                    
-                    # CARGAR EL MODELO INMEDIATAMENTE con debug completo
-                    print("DEBUG_APP: 🔥 INICIANDO CARGA DE MODELO...")
-                    
-                    # 🔧 CORRECCIÓN: Pasar el diccionario completo, NO solo la ruta
-                    model_loaded = self.model_viewer.load_car_model(selected_car)
-                    
-                    if model_loaded:
-                        print(f"DEBUG_APP: ✅ Modelo {selected_car['name']} cargado exitosamente")
-                        print(f"DEBUG_APP: current_model = {self.model_viewer.current_model}")
-                    else:
-                        print(f"DEBUG_APP: ❌ Error cargando modelo para {selected_car['name']}")
-                        # Intentar carga alternativa
-                        print("DEBUG_APP: 🔄 Intentando carga alternativa...")
-                        alt_path = "ferrari-f40"  # Carpeta directa
-                        if self.model_viewer.load_car_model(alt_path):
-                            print("DEBUG_APP: ✅ Carga alternativa exitosa")
-                        else:
-                            print("DEBUG_APP: ❌ Carga alternativa falló")
-
-            # Manejar otras teclas del menú principal
-            if key == ord('q'): # Logout
+            # 🔧 MANEJAR TECLA 'M' PARA VOLVER AL MENÚ (SIN NECESIDAD DE MARCADOR)
+            if key == ord('m') or key == ord('M'):
+                if self.selected_car:
+                    print(f"Volviendo al menú desde {self.selected_car['name']}")
+                    self.selected_car = None
+                    # Limpiar modelo cargado
+                    self.model_viewer.cleanup()
+                    self.model_viewer.current_model = None
+                    print("Modelo limpiado. De vuelta al menú principal.")
+                else:
+                    print("Ya estás en el menú principal")
+                return  # ← IMPORTANTE: return para no procesar más
+            
+            # 🔧 MANEJAR TECLA 'Q' PARA LOGOUT (SIN NECESIDAD DE MARCADOR)
+            elif key == ord('q') or key == ord('Q'):
                 print(f"Cerrando sesión de {self.logged_in_user_str}. Volviendo al menú de bienvenida.")
                 self.logged_in_user_str = None
                 self.selected_car = None
-                self.current_state = STATE_WELCOME
-            elif key == ord('c'): # Limpiar selección
-                print("Limpiando selección de coche.")
-                self.selected_car = None
-                # Limpiar modelo cargado correctamente
+                # Limpiar modelo
                 self.model_viewer.cleanup()
                 self.model_viewer.current_model = None
-
-        elif self.current_state == STATE_AR_MENU_SELECTION:
-            selected_car = self.ar_menu.handle_selection(key)
-            if selected_car:
-                self.selected_car = selected_car
-                print(f"Coche seleccionado: {selected_car['name']}")
-                # Intentar cargar el modelo (opcional por ahora)
-                # self.model_viewer.load_car_model(selected_car["model_path"])
-                self.current_state = STATE_MAIN_MENU_AR  # Volver al menú principal
-            elif key == ord('b'):  # Volver
-                self.current_state = STATE_MAIN_MENU_AR
-
-        elif self.current_state == STATE_AR_MODEL_VIEWER:
-            if key == ord('b'):  # Volver al menú
-                self.current_state = STATE_MAIN_MENU_AR
-                self.selected_car = None
-
-    def _reset_registration_vars(self):
-        self.user_id_for_registration = None
-        self.captured_images_count = 0
-
-    def _capture_image_for_registration(self, frame):
-        if not self.user_id_for_registration:
-            print("Error de lógica: Intento de captura sin user_id_for_registration.")
-            return
-
-        if self.captured_images_count >= NUM_IMAGES_FOR_REGISTRATION:
-            print("Ya se han capturado todas las imágenes necesarias.")
-            return
-
-        _, faces = facial_auth.detect_faces(frame.copy()) 
-
-        if len(faces) == 1:
-            (x, y, w, h) = faces[0]
-            face_roi = frame[y:y+h, x:x+w]
-            gray_face_roi = cv2.cvtColor(face_roi, cv2.COLOR_BGR2GRAY)
-
-            user_data_folder_base = os.path.join(self.project_root_path, USER_FACE_DATA_DIR_REL_TO_PROJECT_ROOT)
-            user_specific_image_folder = os.path.join(user_data_folder_base, "images", self.user_id_for_registration) # Carpeta "images"
-            os.makedirs(user_specific_image_folder, exist_ok=True)
-
-            self.captured_images_count += 1
-            image_filename = f"{self.captured_images_count}.png"
-            full_image_path = os.path.join(user_specific_image_folder, image_filename)
-
-            try:
-                cv2.imwrite(full_image_path, gray_face_roi)
-
-                if self.captured_images_count == NUM_IMAGES_FOR_REGISTRATION:
-                    print(f"¡Todas las imágenes para '{self.user_id_for_registration}' capturadas!")
-                    self.current_state = STATE_REGISTER_TRAIN
-                    print(f"Transicionando a {STATE_REGISTER_TRAIN} para {self.user_id_for_registration}")
-                    self._train_lbph_model()
-            except Exception as e:
-                print(f"Error al guardar la imagen {full_image_path}: {e}")
-                self.captured_images_count -= 1
-        
-        elif len(faces) == 0:
-            pass
-        else:
-            pass
-
-    def _train_lbph_model(self):
-        if not self.user_id_for_registration:
-            print("Error: No hay usuario especificado para el entrenamiento.")
-            self.current_state = STATE_WELCOME
-            return
-
-        print(f"Iniciando entrenamiento LBPH para: {self.user_id_for_registration}")
-
-        user_images_path_base = os.path.join(self.project_root_path, USER_FACE_DATA_DIR_REL_TO_PROJECT_ROOT, "images")
-        user_image_folder = os.path.join(user_images_path_base, self.user_id_for_registration)
-
-        if not os.path.exists(user_image_folder):
-            print(f"Error: No se encontró la carpeta de imágenes para {self.user_id_for_registration} en {user_image_folder}")
-            self.current_state = STATE_WELCOME
-            return
-
-        face_samples = []
-        ids = []
-
-        if self.user_id_for_registration not in self.user_id_map:
-            current_numeric_id = self.next_user_numeric_id
-            self.user_id_map[self.user_id_for_registration] = current_numeric_id
-            self.next_user_numeric_id += 1
-            self._save_user_id_map()
-            # Actualizar el mapa inverso DESPUÉS de guardar el mapa principal
-            self.numeric_id_to_user_str_map = {v: k for k, v in self.user_id_map.items()}
-        else:
-            current_numeric_id = self.user_id_map[self.user_id_for_registration]
-        
-        print(f"ID numérico para '{self.user_id_for_registration}': {current_numeric_id}")
-
-        image_paths = [os.path.join(user_image_folder, f) for f in os.listdir(user_image_folder)]
-
-        for image_path in image_paths:
-            try:
-                img = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
-                if img is None:
-                    print(f"Advertencia: No se pudo cargar la imagen {image_path}")
-                    continue
-                
-                face_samples.append(img)
-                ids.append(current_numeric_id) 
-            except Exception as e:
-                print(f"Error procesando imagen {image_path}: {e}")
-
-        if not face_samples or not ids:
-            print(f"No se encontraron imágenes válidas para entrenar para {self.user_id_for_registration}.")
-            self.current_state = STATE_WELCOME
-            self._reset_registration_vars()
-            return
-
-        print(f"Entrenando con {len(face_samples)} imágenes...")
-        
-        recognizer_instance = cv2.face.LBPHFaceRecognizer_create()
-        recognizer_instance.train(face_samples, np.array(ids))
-
-        model_filename = f"{self.user_id_for_registration}.yml"
-        model_save_path = os.path.join(self.lbph_models_dir, model_filename)
-        
-        try:
-            recognizer_instance.save(model_save_path)
-            print(f"Modelo LBPH para '{self.user_id_for_registration}' guardado en: {model_save_path}")
-        except Exception as e:
-            print(f"Error al guardar el modelo LBPH: {e}")
-            self.current_state = STATE_WELCOME
-            self._reset_registration_vars()
-            return
-
-        print("Entrenamiento completado.")
-        self.current_state = STATE_WELCOME # CAMBIO AQUÍ: Volver a Bienvenida
-        self._reset_registration_vars()
-        self._load_all_trained_models()  # Volver a cargar modelos por si se añadió uno nuevo
-        self.logged_in_user_str = None  # Resetear el usuario logueado después del entrenamiento
-
-    def prompt_for_user_id(self):
-        if self.current_state == STATE_REGISTER_PROMPT_ID:
-            try:
-                user_input_id = input(f"Introduce un ID (o 'cancelar' para volver al menu): ").strip()
-                
-                if user_input_id.lower() == 'cancelar':
-                    print("Solicitud de ID cancelada. Volviendo a menu bienvenida.")
-                    self.current_state = STATE_WELCOME # CAMBIO AQUÍ
-                    self._reset_registration_vars()
-                    return
-
-                is_valid_id = all(c.isalnum() or c == '_' for c in user_input_id) and ' ' not in user_input_id and user_input_id
-
-                if is_valid_id:
-                    self.user_id_for_registration = user_input_id.lower()
+                self.current_state = STATE_WELCOME
+                return  # ← IMPORTANTE: return para no procesar más
+            
+            # Si hay marcador ID 23 visible, permitir selección
+            if ids is not None and 23 in ids:
+                selected_car = self.ar_menu.handle_selection(key)
+                if selected_car:
+                    # 🔧 MANEJAR OPCIÓN VOLVER
+                    if selected_car == "VOLVER":
+                        print("Volviendo al LOGIN desde el menú")
+                        self.logged_in_user_str = None
+                        self.selected_car = None
+                        # Limpiar modelo
+                        self.model_viewer.cleanup()
+                        self.model_viewer.current_model = None
+                        self.current_state = STATE_LOGIN
+                        return
                     
-                    # Comprobar si el usuario ya tiene un modelo entrenado o imágenes
-                    user_images_path_base = os.path.join(self.project_root_path, USER_FACE_DATA_DIR_REL_TO_PROJECT_ROOT, "images")
-                    user_specific_image_folder = os.path.join(user_images_path_base, self.user_id_for_registration)
-                    model_path_check = os.path.join(self.lbph_models_dir, f"{self.user_id_for_registration}.yml")
-
-                    # Si ya existen imágenes o un modelo, preguntar
-                    if os.path.exists(user_specific_image_folder) or os.path.exists(model_path_check):
-                        overwrite = input(f"El ID '{self.user_id_for_registration}' ya tiene datos/modelo. ¿Continuar y sobrescribir/re-entrenar? (s/N): ").strip().lower()
-                        if overwrite != 's':
-                            print("Registro/Re-entrenamiento cancelado. Elige otro ID o cancela.")
-                            self.user_id_for_registration = None
-                            return
+                    # Coche seleccionado normal
+                    print(f"DEBUG_APP: 🏎️ === COCHE SELECCIONADO ===")
+                    print(f"DEBUG_APP: Nombre: {selected_car['name']}")
+                    print(f"DEBUG_APP: Ruta: {selected_car['model_path']}")
                     
-                    self.captured_images_count = 0 
-                    print(f"ID '{self.user_id_for_registration}' aceptado. Iniciando captura de imágenes.")
-                    self.current_state = STATE_REGISTER_CAPTURE
-                else:
-                    print("ID no válido. Usa solo letras, números y guion bajo, sin espacios. Inténtalo de nuevo o presiona 'q' en la ventana para volver a Login.")
-            except EOFError:
-                print("Entrada cancelada. Volviendo a menu bienvenida.")
-                self.current_state = STATE_WELCOME # CAMBIO AQUÍ
-                self._reset_registration_vars()
+                    self.selected_car = selected_car
+                    
+                    # 🔧 CARGAR EL MODELO INMEDIATAMENTE
+                    print(f"DEBUG_APP: 🚗 Cargando modelo {selected_car['name']}...")
+                    success = self.model_viewer.load_car_model(selected_car)
+                    if success:
+                        print(f"DEBUG_APP: ✅ Modelo {selected_car['name']} cargado exitosamente")
+                    else:
+                        print(f"DEBUG_APP: ❌ Error cargando modelo {selected_car['name']}")
+                        self.selected_car = None  # Limpiar selección si falla
 
+    # 🔧 AÑADIR ESTOS MÉTODOS AL FINAL DE LA CLASE:
     def get_current_state(self):
+        """Devuelve el estado actual de la aplicación"""
         return self.current_state
 
+    def set_current_state(self, new_state):
+        """Cambia el estado actual de la aplicación"""
+        print(f"DEBUG_APP: Cambiando estado de {self.current_state} a {new_state}")
+        self.current_state = new_state
+
     def cleanup(self):
-        """Limpiar recursos antes de cerrar la aplicación"""
+        """Limpiar recursos al cerrar la aplicación"""
         if hasattr(self, 'model_viewer') and self.model_viewer:
-            self.model_viewer.cleanup()  # Limpiar pyrender
-        cv2.destroyAllWindows()
+            self.model_viewer.cleanup()
         print("AppManager: Recursos de ventana limpiados.")
+
+    # AÑADIR debug en load_car_model() - Verificar carga exitosa:
+
+    def load_car_model(self, car_dict):
+        import os
+        from trimesh.transformations import rotation_matrix, translation_matrix
+
+        # 🔥 DEBUG CRÍTICO: Verificar qué coche se está cargando
+        print(f"DEBUG_MODEL: 🏎️ === CARGANDO MODELO ===")
+        print(f"DEBUG_MODEL: Coche recibido: {car_dict}")
+        print(f"DEBUG_MODEL: Nombre: {car_dict.get('name', 'DESCONOCIDO')}")
+        print(f"DEBUG_MODEL: Ruta: {car_dict.get('model_path', 'SIN RUTA')}")
+        print(f"DEBUG_MODEL: Escala: {car_dict.get('scale', 0.05)}")
+        print(f"DEBUG_MODEL: Elevación: {car_dict.get('elevation', 0.01)}")
+        print(f"DEBUG_MODEL: ================================")
+
+        model_path = f"assets/3d_models/{car_dict['model_path']}"
+        scale = car_dict.get('scale', 0.05)
+        elevation = car_dict.get('elevation', 0.01)
+        
+        # 🔧 GUARDAR NOMBRE DEL MODELO PARA LOGS
+        self._current_model_name = car_dict.get('name', 'Modelo desconocido')
+
+        print(f"DEBUG_MODEL: Ruta completa: {model_path}")
+        print(f"DEBUG_MODEL: Ruta absoluta: {os.path.abspath(model_path)}")
+        print(f"DEBUG_MODEL: ¿Existe archivo? {os.path.exists(model_path)}")
+
+        if not os.path.exists(model_path):
+            print(f"DEBUG_MODEL: ❌ Modelo no encontrado: {model_path}")
+            # 🔍 DEBUG: Listar qué hay en el directorio
+            dir_path = os.path.dirname(model_path)
+            if os.path.exists(dir_path):
+                print(f"DEBUG_MODEL: Contenido de {dir_path}:")
+                for item in os.listdir(dir_path):
+                    print(f"DEBUG_MODEL:   - {item}")
+            return False
+
+        # ... resto del código sin cambios ...
+
+        print(f"DEBUG_MODEL: ✅ Modelo {self._current_model_name} cargado correctamente")
+        print(f"DEBUG_MODEL: Meshes creados: {len(self.current_model)}")
+        return True
+
+

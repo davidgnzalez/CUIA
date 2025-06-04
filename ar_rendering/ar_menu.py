@@ -8,14 +8,12 @@ class ARMenu:
         print(f"DEBUG_MENU: ARMenu inicializado con {len(self.menu_items)} elementos")
         
     def draw_menu_overlay(self, frame, marker_corners):
-        """Dibuja el menú con múltiples coches"""
+        """Dibuja el menú con múltiples coches y botón volver"""
         if not self.menu_items or marker_corners is None or len(marker_corners) == 0:
             print(f"DEBUG_MENU: No hay elementos ({len(self.menu_items)}) o marcador")
             return frame
         
         print(f"DEBUG_MENU: Dibujando menú con {len(self.menu_items)} coches")
-        for i, car in enumerate(self.menu_items):
-            print(f"DEBUG_MENU: {i+1}. {car['name']} - {car['model_path']}")
         
         # Obtener las esquinas del marcador
         corners = marker_corners[0].reshape(-1, 2)
@@ -30,7 +28,7 @@ class ARMenu:
         
         # Dimensiones del menú (más grande para múltiples opciones)
         menu_width = max(500, marker_width * 4)
-        menu_height = max(300, marker_height * 3)
+        menu_height = max(350, marker_height * 3)  # Más alto para el botón volver
         
         # Posición del menú centrada sobre el marcador
         menu_x = center_x - menu_width // 2
@@ -67,15 +65,20 @@ class ARMenu:
             cv2.putText(frame, car['description'], (menu_x + 80, option_y + 30), 
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
         
-        # Instrucciones
+        # 🔧 AÑADIR BOTÓN VOLVER
+        volver_y = menu_y + menu_height - 120
+        cv2.putText(frame, "0. <- VOLVER AL LOGIN", (menu_x + 60, volver_y), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 100, 100), 2)
+        
+        # Instrucciones actualizadas
         instructions_y = menu_y + menu_height - 60
-        cv2.putText(frame, "1-2: Seleccionar | ESPACIO: Ver modelo 3D", (menu_x + 30, instructions_y), 
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1)
+        cv2.putText(frame, "0: Volver | 1-2: Seleccionar | ESPACIO: Ver modelo 3D", (menu_x + 20, instructions_y), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 0), 1)
         
         return frame
 
     def handle_selection(self, key):
-        """Maneja la selección de múltiples coches"""
+        """Maneja la selección de múltiples coches y opción volver"""
         print(f"DEBUG_MENU: Tecla presionada: {chr(key) if 32 <= key <= 126 else key}")
 
         # Si no hay elementos en el menú, se ignora la tecla
@@ -83,29 +86,20 @@ class ARMenu:
             print("DEBUG_MENU: Menú vacío - se ignora la entrada")
             return None
         
+        # 🔧 OPCIÓN VOLVER CON TECLA "0"
+        if key == ord('0'):
+            print("DEBUG_MENU: ✅ VOLVER AL LOGIN seleccionado")
+            return "VOLVER"  # Valor especial para indicar volver
+        
         # Selección numérica
-        if key >= ord('1') and key <= ord('9'):
+        elif key >= ord('1') and key <= ord('9'):
             index = key - ord('1')  # Convertir '1' a índice 0
             if index < len(self.menu_items):
                 self.selected_index = index
                 print(f"DEBUG_MENU: Navegando a índice {index}: {self.menu_items[index]['name']}")
             else:
                 print(f"DEBUG_MENU: Índice {index} fuera de rango (máximo {len(self.menu_items)-1})")
-        
-        # Navegación con flechas (opcional)
-        elif key == 82:  # Flecha arriba (en algunos sistemas)
-            if not self.menu_items:
-                print("DEBUG_MENU: Menú vacío - flecha arriba ignorada")
-                return None
-            self.selected_index = (self.selected_index - 1) % len(self.menu_items)
-            print(f"DEBUG_MENU: Flecha arriba - Seleccionado: {self.menu_items[self.selected_index]['name']}")
-        elif key == 84:  # Flecha abajo (en algunos sistemas)
-            if not self.menu_items:
-                print("DEBUG_MENU: Menú vacío - flecha abajo ignorada")
-                return None
-            self.selected_index = (self.selected_index + 1) % len(self.menu_items)
-            print(f"DEBUG_MENU: Flecha abajo - Seleccionado: {self.menu_items[self.selected_index]['name']}")
-        
+    
         # Confirmar selección con ESPACIO
         elif key == ord(' '):
             if 0 <= self.selected_index < len(self.menu_items):
@@ -114,5 +108,5 @@ class ARMenu:
                 return selected_car
             else:
                 print(f"DEBUG_MENU: Índice seleccionado inválido: {self.selected_index}")
-        
+    
         return None
