@@ -77,6 +77,11 @@ class ARMenu:
     def handle_selection(self, key):
         """Maneja la selección de múltiples coches"""
         print(f"DEBUG_MENU: Tecla presionada: {chr(key) if 32 <= key <= 126 else key}")
+
+        # Si no hay elementos en el menú, se ignora la tecla
+        if not self.menu_items:
+            print("DEBUG_MENU: Menú vacío - se ignora la entrada")
+            return None
         
         # Selección numérica
         if key >= ord('1') and key <= ord('9'):
@@ -89,9 +94,15 @@ class ARMenu:
         
         # Navegación con flechas (opcional)
         elif key == 82:  # Flecha arriba (en algunos sistemas)
+            if not self.menu_items:
+                print("DEBUG_MENU: Menú vacío - flecha arriba ignorada")
+                return None
             self.selected_index = (self.selected_index - 1) % len(self.menu_items)
             print(f"DEBUG_MENU: Flecha arriba - Seleccionado: {self.menu_items[self.selected_index]['name']}")
         elif key == 84:  # Flecha abajo (en algunos sistemas)
+            if not self.menu_items:
+                print("DEBUG_MENU: Menú vacío - flecha abajo ignorada")
+                return None
             self.selected_index = (self.selected_index + 1) % len(self.menu_items)
             print(f"DEBUG_MENU: Flecha abajo - Seleccionado: {self.menu_items[self.selected_index]['name']}")
         
