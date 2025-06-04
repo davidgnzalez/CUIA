@@ -51,32 +51,47 @@ class AppManager:
 
         self.lbph_models_dir = os.path.join(self.project_root_path, LBPH_MODELS_DIR_REL_TO_PROJECT_ROOT)
         os.makedirs(self.lbph_models_dir, exist_ok=True)
+
+        # 🔧 CONFIGURACIÓN AUTOMÁTICA SEGÚN TIPO DE CÁMARA
+        camera_config = self._detect_camera_config()
         
-        self.camera_matrix_cv = None # Aquí cargarías tu matriz de cámara calibrada
-        self.dist_coeffs_cv = None   # Y tus coeficientes de distorsión
+        # Configurar matriz de cámara con parámetros específicos
+        frame_w_example = camera_config['width']
+        frame_h_example = camera_config['height']
+        focal_multiplier = camera_config['focal_multiplier']
         
-        # Ejemplo de matriz de cámara genérica (¡REEMPLAZAR CON CALIBRACIÓN!)
-        # Esto es solo para que el código se ejecute. La calidad será mala.
-        # Asumimos un frame de 640x480 como ejemplo para calcular cx, cy
-        frame_w_example, frame_h_example = 640, 480 
-        fx_est, fy_est = frame_w_example, frame_w_example # Estimación simple
-        cx_est, cy_est = frame_w_example / 2, frame_h_example / 2
+        # Parámetros ajustados según el tipo de cámara
+        fx_est = frame_w_example * focal_multiplier
+        fy_est = frame_w_example * focal_multiplier
+        cx_est = frame_w_example / 2
+        cy_est = frame_h_example / 2
+
         self.camera_matrix_cv = np.array([
             [fx_est, 0, cx_est],
             [0, fy_est, cy_est],
             [0, 0, 1]
         ], dtype=np.float32)
-        self.dist_coeffs_cv = np.zeros((4,1), dtype=np.float32) # Asumir sin distorsión
+        
+        # Coeficientes de distorsión (asumir cero para simplificar)
+        self.dist_coeffs_cv = np.zeros((4,1), dtype=np.float32)
 
+        # 🔧 INICIALIZAR UMBRAL DE CONFIANZA SEGÚN CÁMARA
+        self.lbph_confidence_threshold = camera_config['confidence_threshold']
+        
+        print(f"DEBUG_CAMERA: Tipo: {camera_config['type']}")
+        print(f"DEBUG_CAMERA: Resolución: {frame_w_example}x{frame_h_example}")
+        print(f"DEBUG_CAMERA: Focal multiplier: {focal_multiplier}")
+        print(f"DEBUG_CAMERA: Focal length: fx={fx_est:.1f}, fy={fy_est:.1f}")
+        print(f"DEBUG_CAMERA: Centro óptico: cx={cx_est:.1f}, cy={cy_est:.1f}")
+        print(f"DEBUG_CAMERA: Umbral de confianza: {self.lbph_confidence_threshold}")
+        
         if not facial_auth.load_cascade(self.project_root_path):
             print("ALERTA CRÍTICA en AppManager: Haar Cascade no pudo ser cargado.")
         
         # Inicializar el detector ArUco
         if not marker_detection.initialize_aruco_detector():
             print("ALERTA CRÍTICA en AppManager: Detector ArUco no pudo ser inicializado.")
-            # Podríamos decidir si la app puede continuar sin esto o no.
-            # Por ahora, el detector simplemente no funcionará si falla.
-        
+    
         cv2.namedWindow(WINDOW_NAME, cv2.WINDOW_NORMAL)
         self._load_all_trained_models() # Cargar modelos al inicio
 
@@ -85,7 +100,7 @@ class AppManager:
         
         # Nuevas variables para el sistema AR
         self.ar_menu = ARMenu()
-        self.ar_menu.menu_items = AVAILABLE_CARS  # ← ASEGURAR que se cargan los coches
+        self.ar_menu.menu_items = AVAILABLE_CARS
         
         # 🔥 DEBUG CRÍTICO: Verificar que se cargan ambos coches
         print(f"DEBUG_APP: Menu inicializado con {len(AVAILABLE_CARS)} coches:")
@@ -159,23 +174,9 @@ class AppManager:
         display_frame = frame.copy()
         height, width = frame.shape[:2]
 
-        # 🚫 COMENTAR TODA LA INICIALIZACIÓN OPENGL DEL CUBO
-        # if not self.camera_initialized_for_gl:
-        #     print("DEBUG_AM: Inicializando OpenGL y cargando textura...")
-        #     scene_renderer.init_opengl(width, height)
-        #     
-        #     texture_full_path = os.path.join(self.project_root_path, self.texture_path_test_rel)
-        #     scene_renderer.texture_id_test = scene_renderer.load_texture(texture_full_path)
-        #     
-        #     if scene_renderer.texture_id_test is not None:
-        #         print(f"DEBUG_AM: Textura de prueba cargada con ID: {scene_renderer.texture_id_test}")
-        #     else:
-        #         print("DEBUG_AM: Falló la carga de la textura de prueba. La cara frontal será roja.")
-        #     self.camera_initialized_for_gl = True
-
-        # ✅ MARCAR COMO INICIALIZADO SIN USAR OPENGL
+        # 🔧 ELIMINAR MENSAJE CONFUSO Y SIMPLIFICAR
         if not self.camera_initialized_for_gl:
-            print("DEBUG_AM: ✅ Saltando inicialización OpenGL - Solo pyrender")
+            # Solo marcar como inicializado, sin mensaje confuso
             self.camera_initialized_for_gl = True
 
         recognition_text_color = (0, 0, 255)  # Default rojo para desconocido
@@ -222,7 +223,7 @@ class AppManager:
                             print(f"DEBUG: Intento de match: {best_match_user_id_str}, Conf Raw: {lowest_confidence:.2f}, Umbral: {LBPH_CONFIDENCE_THRESHOLD}")
                         
                         # Si encontramos un match con suficiente confianza
-                        if best_match_user_id_str and lowest_confidence < LBPH_CONFIDENCE_THRESHOLD:
+                        if best_match_user_id_str and lowest_confidence < self.lbph_confidence_threshold:
                             self.logged_in_user_str = best_match_user_id_str  # Guardar para confirmación
                             recognition_text_color = (0, 255, 0)  # Verde para reconocido
                             
@@ -662,4 +663,207 @@ class AppManager:
         print(f"DEBUG_MODEL: Meshes creados: {len(self.current_model)}")
         return True
 
+    def prompt_for_user_id(self):
+        """Solicitar ID de usuario para registro desde terminal"""
+        try:
+            if not hasattr(self, '_user_id_input_started'):
+                print("\n" + "="*50)
+                print("🆔 REGISTRO DE NUEVO USUARIO")
+                print("="*50)
+                self._user_id_input_started = True
+            
+            # Solicitar ID si no se ha hecho aún
+            if not self.user_id_for_registration:
+                user_id = input("Introduce tu nombre de usuario (sin espacios): ").strip()
+                
+                if not user_id:
+                    print("❌ El ID no puede estar vacío. Inténtalo de nuevo.")
+                    return
+                
+                if ' ' in user_id:
+                    print("❌ El ID no puede contener espacios. Inténtalo de nuevo.")
+                    return
+                
+                # Verificar que no existe ya
+                if user_id in self.user_id_map:
+                    print(f"❌ El usuario '{user_id}' ya existe. Elige otro nombre.")
+                    return
+                
+                # ID válido y único
+                self.user_id_for_registration = user_id
+                print(f"✅ ID '{user_id}' disponible. Transicionando a captura...")
+                
+                # Limpiar flag
+                if hasattr(self, '_user_id_input_started'):
+                    delattr(self, '_user_id_input_started')
+                
+                # Cambiar al estado de captura
+                self.current_state = STATE_REGISTER_CAPTURE
+                self.captured_images_count = 0
+                
+        except EOFError:
+            print("\n❌ Entrada cancelada. Volviendo al menú principal.")
+            self._reset_registration_vars()
+            self.current_state = STATE_WELCOME
+        except KeyboardInterrupt:
+            print("\n❌ Registro cancelado por el usuario.")
+            self._reset_registration_vars()
+            self.current_state = STATE_WELCOME
 
+    def _reset_registration_vars(self):
+        """Limpiar variables de registro"""
+        self.user_id_for_registration = None
+        self.captured_images_count = 0
+        if hasattr(self, '_user_id_input_started'):
+            delattr(self, '_user_id_input_started')
+        print("DEBUG_REGISTER: Variables de registro limpiadas")
+
+    def _capture_image_for_registration(self, frame):
+        """Capturar imagen para entrenamiento del modelo facial"""
+        print(f"DEBUG_REGISTER: Intentando capturar imagen {self.captured_images_count + 1}")
+        
+        # Detectar caras en el frame actual
+        gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        face_cascade_path = os.path.join(self.project_root_path, 
+                                        'assets/face_data/cascades/haarcascade_frontalface_default.xml')
+        
+        if not os.path.exists(face_cascade_path):
+            print(f"❌ No se encuentra el archivo cascade: {face_cascade_path}")
+            return
+        
+        face_cascade = cv2.CascadeClassifier(face_cascade_path)
+        faces = face_cascade.detectMultiScale(gray_frame, 1.3, 5)
+        
+        if len(faces) != 1:
+            print(f"❌ Se necesita exactamente 1 cara, detectadas: {len(faces)}")
+            return
+        
+        # Extraer la cara detectada
+        (x, y, w, h) = faces[0]
+        face_roi = gray_frame[y:y+h, x:x+w]
+        
+        # Crear directorio del usuario
+        user_dir = os.path.join(self.project_root_path, 
+                             USER_FACE_DATA_DIR_REL_TO_PROJECT_ROOT, 
+                             self.user_id_for_registration)
+        os.makedirs(user_dir, exist_ok=True)
+        
+        # Guardar imagen
+        img_filename = f"face_{self.captured_images_count:03d}.jpg"
+        img_path = os.path.join(user_dir, img_filename)
+        
+        # Redimensionar cara a tamaño estándar
+        face_resized = cv2.resize(face_roi, (100, 100))
+        cv2.imwrite(img_path, face_resized)
+        
+        self.captured_images_count += 1
+        print(f"✅ Imagen {self.captured_images_count}/{NUM_IMAGES_FOR_REGISTRATION} capturada: {img_filename}")
+        
+        # Si hemos capturado suficientes imágenes, entrenar modelo
+        if self.captured_images_count >= NUM_IMAGES_FOR_REGISTRATION:
+            print(f"🎯 {NUM_IMAGES_FOR_REGISTRATION} imágenes capturadas. Iniciando entrenamiento...")
+            self.current_state = STATE_REGISTER_TRAIN
+            self._train_user_model()
+
+    def _train_user_model(self):
+        """Entrenar modelo LBPH para el usuario registrado"""
+        print(f"🔧 Entrenando modelo para {self.user_id_for_registration}...")
+        
+        try:
+            # Cargar imágenes del usuario
+            user_dir = os.path.join(self.project_root_path, 
+                                   USER_FACE_DATA_DIR_REL_TO_PROJECT_ROOT, 
+                                   self.user_id_for_registration)
+            
+            faces = []
+            labels = []
+            
+            # Asignar ID numérico al usuario
+            if self.user_id_for_registration not in self.user_id_map:
+                numeric_id = self.next_user_numeric_id
+                self.user_id_map[self.user_id_for_registration] = numeric_id
+                self.numeric_id_to_user_str_map[numeric_id] = self.user_id_for_registration
+                self.next_user_numeric_id += 1
+                self._save_user_id_map()
+                print(f"✅ ID numérico {numeric_id} asignado a '{self.user_id_for_registration}'")
+            
+            numeric_id = self.user_id_map[self.user_id_for_registration]
+            
+            # Cargar todas las imágenes
+            for img_file in os.listdir(user_dir):
+                if img_file.endswith('.jpg'):
+                    img_path = os.path.join(user_dir, img_file)
+                    face_img = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
+                    if face_img is not None:
+                        faces.append(face_img)
+                        labels.append(numeric_id)
+            
+            if len(faces) == 0:
+                print("❌ No se encontraron imágenes válidas para entrenar")
+                self._reset_registration_vars()
+                self.current_state = STATE_WELCOME
+                return
+            
+            print(f"📚 Entrenando con {len(faces)} imágenes...")
+            
+            # Entrenar modelo LBPH
+            recognizer = cv2.face.LBPHFaceRecognizer_create()
+            recognizer.train(faces, np.array(labels))
+            
+            # Guardar modelo
+            model_filename = f"{self.user_id_for_registration}.yml"
+            model_path = os.path.join(self.lbph_models_dir, model_filename)
+            recognizer.write(model_path)
+            
+            # Cargar en memoria
+            self.loaded_recognizers[self.user_id_for_registration] = recognizer
+            
+            print(f"✅ Modelo entrenado y guardado: {model_path}")
+            print(f"🎉 Usuario '{self.user_id_for_registration}' registrado correctamente!")
+            
+            # Limpiar variables y volver a login
+            self._reset_registration_vars()
+            self.current_state = STATE_LOGIN
+            
+        except Exception as e:
+            print(f"❌ Error durante el entrenamiento: {e}")
+            import traceback
+            traceback.print_exc()
+            self._reset_registration_vars()
+            self.current_state = STATE_WELCOME
+
+    # MODIFICAR core/app_manager.py - Umbral adaptativo según cámara:
+
+    def _detect_camera_config(self):
+        """Detectar configuración óptima según tipo de cámara"""
+        # Obtener la cámara que se está usando desde config
+        from core.config import CAMERA_INDEX
+        camera_index = CAMERA_INDEX
+        
+        if camera_index == 2:
+            # DroidCam detectado - parámetros conservadores
+            return {
+                'type': 'DroidCam',
+                'width': 640,
+                'height': 480,
+                'focal_multiplier': 0.6,  # Menos zoom para DroidCam
+                'confidence_threshold': 60  # ← UMBRAL MÁS ALTO PARA DROIDCAM
+            }
+        elif camera_index == 0:
+            # Cámara del PC - parámetros estándar
+            return {
+                'type': 'Webcam PC',
+                'width': 640,
+                'height': 480,
+                'focal_multiplier': 0.8,
+                'confidence_threshold': 50  # ← UMBRAL ORIGINAL PARA PC
+            }
+        else:
+            # Otra cámara - parámetros por defecto
+            return {
+                'type': 'Desconocida',
+                'width': 640,
+                'height': 480,
+                'focal_multiplier': 0.7,
+                'confidence_threshold': 70  # ← INTERMEDIO
+            }
